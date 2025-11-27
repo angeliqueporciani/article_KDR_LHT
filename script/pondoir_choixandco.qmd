@@ -1,0 +1,740 @@
+---
+title: "Analyse choix pondoir manip"
+author: "Angelique Porciani"
+date: Sys.Date()
+format:
+  html:
+    code-fold: true
+    html-math-method: katex
+    code-tools: true
+    self-contained: true
+  pdf: default
+editor: visual
+editor_options: 
+  chunk_output_type: console
+toc: true
+execute:
+  warning: false
+  message: false
+  cache: false
+---
+
+## 1. Data loading
+
+```{r}
+
+# package loading 
+library(readxl)
+library(tidyverse)
+library(gtsummary)
+library(Rmisc)
+library(emmeans)
+library(kableExtra)
+library(DHARMa)
+library(glmmTMB)
+
+setwd("/Users/angeliqueporciani/Nextcloud/Partages_recus/20221017_Manip_gîtes_larvaires/KdrKIS/20221017_Manip larve + oviposition/Analyse")
+
+# data import 
+CP_data <- read_excel("./Data/20230503_tous_replicats_choix_pondoir.xlsx") %>% mutate_if(is.character, as.factor) %>% dplyr::rename(concentration_origine=`concentration_permethrine_mg/ml`) 
+CP_data <- CP_data %>% 
+  mutate(concentration_origine=as.factor(concentration_origine))
+
+BFR_data <- read_excel("./Data/20230503_tous_replicats_taux_gorgement.xlsx")
+
+HatchingR <- read_excel("./Data/20230503_tous_replicats_oeuf_eclosion rate.xlsx")
+HR_2 <- read.csv2("./Data/hatching_02rep.csv")
+
+LHT_data <- read_excel("./Data/20230503_tous_replicats_larves_nymphes_adultes_LHT.xlsx") %>% mutate(jour=as.numeric(as.character(jour))) %>% mutate_if(is.character, as.factor) %>% dplyr::rename(concentration_origine=`concentration_permethrine_mg/ml`) %>% droplevels()
+```
+
+## 2. Choix du pondoir
+
+### 2.1. Summary of data
+
+```{r}
+
+CP_data %>% 
+  tbl_summary(include = c("nom", "index"), by = "nom",     statistic = all_continuous() ~ "Moy. : {mean}; Median: {median}; SD: {sd}")
+
+hist(CP_data$nbr_oeufs)
+summary(CP_data)
+# delete value for red 
+
+mod_data <- CP_data %>% filter(souche=="kdr")
+
+
+```
+
+### 2.2. Stat on nb of eggs laid in function of pound type.
+
+```{r}
+
+library(glmmTMB)
+
+glm1 <- glmmTMB(nbr_oeufs~1, data=mod_data, family = poisson)
+glm2 <- glmmTMB(nbr_oeufs~nom, data=mod_data, family = poisson)
+glm3 <- glmmTMB(nbr_oeufs~nom, data=mod_data, family = nbinom1())
+glm4 <- glmmTMB(nbr_oeufs~nom + (1|replicat), data=mod_data, family = nbinom1())
+
+# nb oeuf dans permethrine
+glm5 <- glmmTMB(nb_oeuf_perm~nom + (1|replicat), data=mod_data, family = nbinom1())
+summary(glm5)
+
+AIC(glm1, glm2, glm3, glm4)
+# 3 seems better regarding AIC 
+summary(glm4)
+
+glm3%>% tbl_regression(intercept = TRUE)
+
+emm_nbrofnR <- emmeans(glm4, pairwise~nom, infer=TRUE, type="response")
+emm_nbrofnR
+
+library(DHARMa)
+res <- simulateResiduals(glm4)
+plot(res)#Ok on valide 
+
+# plot 
+
+emm_nbrofnR_plot <- emm_nbrofnR$emmeans %>% data.frame()
+emm_nbrofnR_plot$nom <- factor(emm_nbrofnR_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
+mod_data$nom <- factor(mod_data$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
+
+ENb_plot <- emm_nbrofnR_plot %>%  ggplot()+
+    #geom_jitter(data=mod_data,aes(x=nom, y=nbr_oeufs, colour=nom))+
+  geom_col(data=emm_nbrofnR_plot, aes(x=nom, y=response, colour=nom, fill=nom, alpha = 0.8))+
+    geom_errorbar(data=emm_nbrofnR_plot, aes(x=nom, y=response, ymin=asymp.LCL, ymax=asymp.UCL, colour=nom), width=.2,
+                 position=position_dodge(.9))+
+          theme_light()+
+  #ylim(c(0,1))+
+      ylab("Mean egg number per female ")+
+  xlab("Permethrin concentration (mg/L)")+
+        theme(legend.position = "none")+  
+  scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100"))+
+  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "0.0002", "orange_KDR" = "0.002" )) 
+
+ENb_plot
+ggsave("./img/Nb_egg_pic.jpeg", width = 30, height = 20, units = "cm")
+
+
+```
+
+### 2.3. Choix du pondoir en fonction de la composition du gite d'origine des femelles
+
+```{r}
+# choix pondoir function of origin
+mod_data <- mod_data %>% mutate(choix_perm=case_when(choix_pondoir== "perm" ~1, 
+                                                     choix_pondoir== "eau" ~0))
+
+glmO <- glmmTMB(choix_pondoir~1, data=mod_data, family = binomial)
+glma <- glmmTMB(choix_pondoir~traitement_provenance, data=mod_data, family = binomial)
+glmb <- glmmTMB(choix_pondoir~traitement_provenance+(1|replicat), data=mod_data, family = binomial)
+
+AIC(glmO,glma, glmb)
+
+glmO <- glmmTMB(choix_perm~1, data=mod_data, family = binomial)
+glma <- glmmTMB(choix_perm~traitement_provenance, data=mod_data, family = binomial)
+glmb <- glmmTMB(choix_perm~traitement_provenance+(1|replicat), data=mod_data, family = binomial)
+
+AIC(glmO,glma, glmb)
+emm_Index0 <- emmeans(glmO, pairwise~1, infer=TRUE, type="response")
+
+summary(glmb)
+summary(glmO)
+glmb2 <- glmmTMB(choix_perm~nom+(1|replicat), data=mod_data, family = binomial)
+summary(glmb2)
+
+emm_Index <- emmeans(glmb2, pairwise~nom, infer=TRUE, type="response")
+emm_Index
+```
+
+No choice in function of composition of breeding site origin.
+
+### 2.4. Success/failure
+
+```{r}
+glm_SF1 <- glmmTMB(cbind(nb_oeuf_perm, nb_oeuf_eau)~1, weight=nbr_oeufs, data=mod_data, family = binomial)
+
+glm_SF2 <- glmmTMB(cbind(nb_oeuf_perm, nb_oeuf_eau)~nom, weight=nbr_oeufs, data=mod_data, family = binomial)
+summary(glm_SF2)
+emm_SF <- emmeans(glm_SF2, pairwise~nom, infer=TRUE, type="response")
+emm_SF
+mod_data <- mod_data %>% mutate(prop_of_perm=nb_oeuf_perm/nbr_oeufs)
+
+glm5 <- brglm(prop_of_perm~nom + (1|replicat), data=mod_data, family = binomial)
+summary(glm5)
+```
+
+Regarder avec une distribution de poisson comme dans l'article sur trichogramma ?
+
+## 3 : Taux de ponte
+
+```{r}
+mod_data %>% 
+  tbl_summary(include = c("nom", "ponte_1"), by = "nom",     statistic = all_continuous() ~ "Moy. : {mean}; Median: {median}; SD: {sd}")
+
+glm_ponte1 <- glmmTMB(ponte_1~nom, family= binomial, data= mod_data)
+glm_ponte2 <- glmmTMB(ponte_1~nom+(1|replicat), family= binomial, data= mod_data)
+glm_ponte2.b <- glmmTMB(ponte_1~concentration_origine+(1|replicat), family= binomial, data= mod_data)
+
+summary(glm_ponte2)
+summary(glm_ponte2.b)
+
+emm_ovipositionR <- emmeans(glm_ponte2, pairwise~nom, infer=TRUE, type="response")
+emm_ovipositionR
+emm_ovipositionR.B <- emmeans(glm_ponte2.b, pairwise~concentration_origine, infer=TRUE, type="response")
+emm_ovipositionR.B
+
+emm_ovipositionR.B2 <- emmeans(glm_ponte2.b, pairwise~concentration_origine, infer=TRUE, type="response")
+emm_ovipositionR.B2
+
+# plot 
+emm_OR_plot <- emm_ovipositionR$emmeans %>% data.frame()
+emm_OR_plot$nom <- factor(emm_OR_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
+
+ELR_plot <- emm_OR_plot%>%  ggplot()+
+    #geom_jitter(data=HR_mod_tot,aes(x=nom, y=HR, colour=nom))+
+  geom_col(data=emm_OR_plot, aes(x=nom, y=prob, colour=nom, fill=nom, alpha = 0.8))+
+    geom_errorbar(data=emm_OR_plot, aes(x=nom, y=prob, ymin=asymp.LCL, ymax=asymp.UCL, colour=nom), width=.2,
+                 position=position_dodge(.9))+
+          theme_light()+
+  ylim(c(0,1))+
+      ylab("Egg laying rate ")+
+  xlab("Permethrin concentration (mg/L)")+
+        theme(legend.position = "none", axis.title.x=element_blank())+  
+  scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100"))+
+  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "0.0002", "orange_KDR" = "0.002" )) 
+
+ELR_plot
+ggsave("./img/ELR_pic.jpeg", width = 30, height = 20, units = "cm")
+
+
+```
+
+No difference detected for the prob of egg laying in function of breeding site origin.
+
+## 4 : Blood feeding rate
+
+### 4.1: data summary
+
+```{r}
+BFR_data <- BFR_data %>% mutate_if(is.character, as.factor) 
+
+BFR_data %>% 
+  tbl_summary(include = c("nom", "gorgee_1"), by = "nom") 
+
+summary(BFR_data)
+
+BFR_data_mod <- BFR_data %>% filter(souche=="KDR") %>% droplevels()
+summary(BFR_data_mod)
+
+n_gorgee <- BFR_data_mod %>% 
+  dplyr::group_by(nom, date_gorgement) %>% 
+  dplyr::filter(gorgee=="oui") %>% 
+  dplyr::summarise(n_gorgee=n())
+  
+n_tot <- BFR_data_mod %>% 
+  dplyr::group_by(nom, date_gorgement) %>% 
+ # dplyr::filter(gorgee=="oui") %>% 
+  dplyr::summarise(n_tot=n())
+
+BFR_data_plot <- inner_join(n_gorgee,n_tot) %>% 
+  mutate(prop_gorgee=n_gorgee/n_tot)
+summary(BFR_data_plot)
+
+BFR_data_plot$nom <- factor(BFR_data_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
+
+
+BFR_data_plot %>%drop_na() %>%  ggplot()+
+ geom_jitter(aes(x=nom, y=prop_gorgee, colour=nom))+
+  geom_boxplot(aes(x=nom, y=prop_gorgee, colour=nom), width = 0.15, 
+               position = position_dodge(0.9))+
+   geom_violin(aes(x=nom, y=prop_gorgee,
+                    fill = nom,
+                    colour=nom),alpha=0.3, linewidth = 0)+
+  theme_light()+
+  ylim(c(0,1))+
+      ylab("Proportion of female blood fed")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "0.0002", "orange_KDR" = "0.002" )) 
+
+ggsave("./img/BFR_pic.jpeg", width = 30, height = 20, units = "cm")
+
+
+# test avec prop.test 
+
+eau_kdr <- c(0.92, 0.66, 0.89)
+orange_kdr <- c(0.952, 0.965, 1)
+rose_kdr <- c(1, 0.93, 0.89)
+
+prop.test(eau_kdr, orange_kdr)
+prop.test(eau_kdr, rose_kdr)
+
+BFR_data_plot %>% dplyr::filter(nom=="rose_KDR")
+
+```
+
+### 4.2 : Statistics
+
+```{r}
+library(brglm2)
+
+glm_BFR <- glmmTMB(gorgee_1~nom+(1|replicat), data=BFR_data_mod, family=binomial())
+summary(glm_BFR)
+
+glm_BFR2 <- brglm(gorgee_1~nom, data=BFR_data_mod, family=binomial(link = "logit"))
+summary(glm_BFR2)
+
+
+emm_BFR <- emmeans(glm_BFR, pairwise~nom, infer=TRUE, type="response")
+emm_BFR
+emm_BFR_plot <- emm_BFR$emmeans %>% data.frame()
+
+
+
+# emm_BFR2 <- emmeans(glm_BFR2, pairwise~nom, i... = # emm_BFR2 <- emmeans(glm_BFR2, pairwise~nom, infer=TRUE, type="response")
+# emm_BFR2
+
+library(broom)
+tidy(glm_BFR, conf.int = TRUE, exponentiate = TRUE)
+# check residuals 
+
+res <- simulateResiduals(glm_BFR)
+plot(res)# ok
+
+
+# labs <- c("No Food", "With Food")
+# names(labs) <- c(0, 1)
+# plot emmean
+
+emm_BFR_plot$nom <- factor(emm_BFR_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
+
+BFR_plot <-  ggplot()+
+ # geom_jitter(data=BFR_data_plot,aes(x=nom, y=prop_gorgee, colour=nom))+
+geom_col(data=emm_BFR_plot,aes(x=nom, y=prob, colour=nom, fill=nom, alpha = 0.8))+
+    geom_errorbar(data=emm_BFR_plot,aes(x=nom, y=prob, ymin=asymp.LCL, ymax=asymp.UCL, colour=nom), width=.2,
+                 position=position_dodge(.9))+
+  theme_light()+
+  #ylim(c(0,1))+
+      ylab("Blood feeding Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "0.0002", "orange_KDR" = "0.002"))
+BFR_plot
+
+ggsave("./img/BFR_pic_col.jpeg", width = 20, height = 15, units = "cm")
+
+```
+
+## 5. Pupation rate
+
+### 5.1 : summary data
+
+```{r}
+LHT_data %>% 
+  tbl_summary(include = c("nom", "passage_ny1phe"), by = "nom")
+```
+
+### 5.2 : Statistics analysis
+
+```{r}
+LHT_mod <- LHT_data %>% dplyr::filter(souche=="kdr"&nom!="NA") %>% 
+  dplyr::mutate(concentration_origine2=as.factor(concentration_origine)) %>% 
+  #dplyr::filter(sexe!="NA") %>%
+  #na.omit(sexe) %>%
+  droplevels()
+
+summary(LHT_mod)
+
+sub_dat <- LHT_mod %>% 
+  dplyr::filter(nom!="rouge_KDR"|nom!="NA") %>% 
+  droplevels() %>% 
+  dplyr::filter(sexe!="NA") %>%  droplevels() 
+summary(sub_dat)
+
+glm_NR_kdr <- glmmTMB(passage_ny1phe~nom+(1|replicat), data=LHT_mod, family=binomial())
+summary(glm_NR_kdr)
+emm_NR_kdr <- emmeans(glm_NR_kdr, pairwise~nom, infer=TRUE, type="response")
+emm_NR_kdr
+
+sim <- simulateResiduals(glm_NR_kdr)
+plot(sim)
+
+
+## plot 
+# n_PR <- sub_dat %>% 
+#   dplyr::group_by(nom, date_gorgement) %>% 
+#   dplyr::filter(gorgee=="oui") %>% 
+#   dplyr::summarise(n_gorgee=n())
+#   
+# n_tot <- BFR_data %>% 
+#   dplyr::group_by(nom, date_gorgement) %>% 
+#  # dplyr::filter(gorgee=="oui") %>% 
+#   dplyr::summarise(n_tot=n())
+# 
+# BFR_data_plot <- inner_join(n_gorgee,n_tot) %>% 
+#   mutate(prop_gorgee=n_gorgee/n_tot)
+plot_emm_PR <- emm_NR_kdr$emmeans %>% data.frame()
+plot_emm_PR[4,6] <- 0 # changement des valeurs pour le rouge ou tout est mort
+plot_emm_PR[4,5] <- 0 # changement des valeurs pour le rouge ou tout est mort
+
+plot_emm_PR$nom <- factor(plot_emm_PR$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR", "rouge_KDR"))
+
+plot_PR <- plot_emm_PR %>% ggplot()+
+   geom_col(aes(x=nom, y=prob, colour=nom, fill=nom, alpha = 0.8))+
+    geom_errorbar(aes(x=nom, y=prob, ymin=asymp.LCL, ymax=asymp.UCL, colour=nom), width=.2,
+                 position=position_dodge(.9))+
+          theme_light()+
+  ylim(c(0,1))+
+      ylab("Pupation Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+        theme(legend.position="none", axis.title.x=element_blank())+  
+  scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100", "#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100", "#CC0000"))+
+  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "0.0002", "orange_KDR" = "0.002", "rouge_KDR"="0.02")) 
+
+plot_PR
+
+ggsave("./img/PR_pic.jpeg", width = 30, height = 20, units = "cm")
+```
+
+Pas possible de tester l'effet du sexe sur la pupaison car sexage fait après l'emergence donc tout les individus dont le sexe est identifié ont forcement emergés.
+
+## 6. Pupation time
+
+```{r}
+LHT_data %>% 
+  tbl_summary(include = c("nom", "jour"), by = "nom")
+
+
+summary(LHT_data)
+hist(LHT_data$jour)
+
+```
+
+```{r}
+
+
+
+
+
+
+
+```
+
+## 7. Eclosion en insecticide
+
+```{r}
+
+HatchingR %>% 
+  tbl_summary(include = c("nom"))
+
+#HatchingR <- HatchingR %>% filter(jour!=1&jour!=2)# a verifier pourquoi on retire ces jours avec Adeline. 
+
+summary(HatchingR)
+hist(HatchingR$individus)
+
+# on ne garde les resultats que pour KDR et pour le jour 1. 
+# HR : hatching rate = nb of larvae (alive)
+HR_mod <- HatchingR %>% filter(souche=="KDR"& jour=="1") %>% 
+  mutate(HR=individus/10) %>% droplevels()
+
+HR_mod$nom <- factor(HR_mod$nom, levels = c("KDR_eau", "KDR_rose", "KDR_orange", "KDR_rouge"))
+HR_mod %>% filter(HR>=1)
+
+HR_mod %>% ggplot()+
+  geom_point(aes(x=nom, y=HR, colour=nom))+
+  geom_boxplot(aes(x=nom, y=HR, colour=nom), width = 0.15, 
+               position = position_dodge(0.9))+
+   geom_violin(aes(x=nom, y=HR,
+                    fill = nom,
+                    colour=nom),alpha=0.3, linewidth = 0)+
+  theme_light()+
+  #ylim(c(0,1))+
+      ylab("Hatching Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" )) 
+
+
+# plot 2 eme manips 
+
+HR_2 <- HR_2 %>%  mutate(HR=n_larves_alive/n_eggs)
+
+HR_2 %>% ggplot()+
+  geom_jitter(aes(x=nom, y=HR, colour=nom))+
+  # geom_boxplot(aes(x=nom, y=HR, colour=nom), width = 0.15, 
+  #              position = position_dodge(0.9))+
+  #  geom_violin(aes(x=nom, y=HR,
+  #                   fill = nom,
+  #                   colour=nom),alpha=0.3, linewidth = 0)+
+  theme_light()+
+  #ylim(c(0,1))+
+      ylab("Hatching Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" ))+
+  facet_grid(cols = vars(jour))
+
+HR_2 %>% ggplot()+
+  geom_jitter(aes(x=nom, y=HR, colour=nom))+
+  geom_boxplot(aes(x=nom, y=HR, colour=nom), width = 0.15,
+               position = position_dodge(0.9))+
+  # geom_violin(aes(x=nom, y=HR,
+  #                   fill = nom,
+  #                   colour=nom),alpha=0.3, linewidth = 0)+
+  theme_light()+
+  #ylim(c(0,1))+
+      ylab("Hatching Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" ))+
+  facet_grid(cols = vars(jour))
+
+```
+
+```{r}
+# si on prend le nombre d'individu 
+glm_HR_P <- glmmTMB(individus~nom, data=HR_mod, family=poisson())
+glm_HR_G <- glmmTMB(individus~nom, data=HR_mod, family=gaussian())
+glm_HR_NB <- glmmTMB(individus~nom, data=HR_mod, family=truncated_nbinom1(link = "log"))
+
+AIC(glm_HR_G,glm_HR_P, glm_HR_NB)
+summary(glm_HR_G)
+
+emm_HR <- emmeans(glm_HR_G, pairwise~nom, infer=TRUE, type="response")
+emm_HR
+
+sim <- simulateResiduals(glm_HR_G)
+plot(sim)
+summary(HR_mod)
+
+# test en binomial pour le vrai rate 
+library(brglm)
+glm_HR_Bin <- glm(HR~nom, data=HR_mod, family=binomial(link="logit"))
+#glm_HR_Bin <- glmmTMB(HR~nom, data=HR_mod, family=binomial())
+
+summary(glm_HR_Bin)
+emm_HR_bin <- emmeans(glm_HR_Bin, revpairwise~nom, infer=TRUE, type="response")
+emm_HR_bin
+sim <- simulateResiduals(glm_HR_Bin)
+plot(sim)
+# plot 
+hist(HR_mod$HR)
+
+#binom test 
+
+x <- cbind(HR_mod$individus, 10-HR_mod$individus)
+prop.test(x)
+
+#sum of successes 
+
+HR_mod %>% dplyr::group_by(nom) %>% 
+  dplyr::summarise(sum=sum(individus), n=n())
+
+
+# 2eme replicat 
+glm_HR_Bin.2 <- glm(HR~nom, data=HR_2, family=binomial(link="logit"))
+
+sim <- simulateResiduals(glm_HR_Bin.2)
+plot(sim)
+
+```
+
+```{r}
+# binding of both replicate 
+
+HR_1_b <- HR_mod %>% select(souche, nom, produit, jour,Conc, individus) %>% mutate(HR=individus/10, replicate=rep(1)) %>% 
+  dplyr::rename(n_larves_alive=individus)
+
+HR_2_b <- HR_2 %>% filter(jour==1 & Food==0) %>% select(souche, nom, produit, jour,Conc, n_larves_alive, HR) %>% mutate(replicate=rep(2)) 
+
+# cbind 
+
+HR_mod_tot <- rbind(HR_1_b, HR_2_b)
+
+# Effectif 
+
+HR_mod_tot %>% dplyr::group_by(nom, replicate) %>% dplyr::summarise(effectif=n())
+
+# plot 
+HR_mod_tot %>% ggplot()+
+  geom_jitter(aes(x=nom, y=HR, colour=nom))+
+  geom_boxplot(aes(x=nom, y=HR, colour=nom), width = 0.15,
+               position = position_dodge(0.9))+
+  # geom_violin(aes(x=nom, y=HR,
+  #                   fill = nom,
+  #                   colour=nom),alpha=0.3, linewidth = 0)+
+  theme_light()+
+  #ylim(c(0,1))+
+      ylab("Hatching Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" ))+facet_grid(cols=vars(replicate))
+
+# plot 2 
+
+HR_mod_tot %>% ggplot()+
+  geom_jitter(aes(x=nom, y=HR, colour=nom))+
+  geom_boxplot(aes(x=nom, y=HR, colour=nom), width = 0.15,
+               position = position_dodge(0.9))+
+  # geom_violin(aes(x=nom, y=HR,
+  #                   fill = nom,
+  #                   colour=nom),alpha=0.3, linewidth = 0)+
+  theme_light()+
+  #ylim(c(0,1))+
+      ylab("Hatching Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" ))
+ggsave("./img/HR_pic_rawdata.jpeg", width = 20, height = 15, units = "cm")
+
+
+#modele
+glm_HR_Bin.tot2 <- glm(HR~nom, data=HR_mod_tot, family=quasibinomial(link="logit"))
+# sim <- simulateResiduals(glm_HR_Bin.tot2)
+# plot(sim)
+plot(residuals(glm_HR_Bin.tot2))
+
+summary(glm_HR_Bin.tot2)
+plot(residuals(glm_HR_Bin.tot2))
+
+emm_HR_binFJR <- emmeans(glm_HR_Bin.tot2, revpairwise~nom, infer=TRUE, type="response")
+emm_HR_binFJR
+emm_plot_HR <- emm_HR_binFJR$emmeans %>% data.frame()
+# plot of emmeans (barplot+raw data)
+
+HR <- ggplot()+
+ # geom_jitter(data=HR_mod_tot,aes(x=nom, y=HR, colour=nom))+
+geom_col(data=emm_plot_HR,aes(x=nom, y=prob, colour=nom, fill=nom, alpha = 0.8))+
+    geom_errorbar(data=emm_plot_HR,aes(x=nom, y=prob, ymin=asymp.LCL, ymax=asymp.UCL, colour=nom), width=.2,
+                 position=position_dodge(.9))+
+  theme_light()+
+  ylim(c(0,1))+
+      ylab("Hatching Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+      theme(legend.position = "none", axis.title.x=element_blank())+  
+  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" ))
+
+HR
+
+ggsave("./img/HR_pic_col.jpeg", width = 20, height = 15, units = "cm")
+
+# visu impact of food 
+
+HR_2 %>% filter(jour==3) %>%  ggplot()+
+  geom_jitter(aes(x=nom, y=HR, colour=nom))+
+  geom_boxplot(aes(x=nom, y=HR, colour=nom), width = 0.15,
+               position = position_dodge(0.9))+
+  # geom_violin(aes(x=nom, y=HR,
+  #                   fill = nom,
+  #                   colour=nom),alpha=0.3, linewidth = 0)+
+  theme_light()+
+  #ylim(c(0,1))+
+      ylab("Hatching Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" ))+facet_grid(cols=vars(Food))
+
+
+## 
+labs <- c("No Food", "With Food")
+names(labs) <- c(0, 1)
+
+labs_day <- c("Day 1", "Day 2","Day 3")
+names(labs_day) <- c(1,2,3)
+
+HR_2 %>%  ggplot()+
+  geom_jitter(aes(x=nom, y=HR, colour=nom))+
+  geom_boxplot(aes(x=nom, y=HR, colour=nom), width = 0.15,
+               position = position_dodge(0.9))+
+  # geom_violin(aes(x=nom, y=HR,
+  #                   fill = nom,
+  #                   colour=nom),alpha=0.3, linewidth = 0)+
+  theme_light()+
+  #ylim(c(0,1))+
+      ylab("Hatching Rate")+
+  xlab("Permethrin concentration (mg/L)")+
+      scale_color_manual(labels = c("No Food", "With Food"),
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+    scale_fill_manual(
+      values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
+      theme(legend.position = "none")+  
+  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" ))+facet_grid(cols=vars(Food), rows=vars(jour), labeller=labeller(Food=labs, jour=labs_day))
+
+ggsave("./img/HR_R02_Food_jr.jpeg", width = 20, height = 15, units = "cm")
+
+#modele
+hist(HR_2$HR)
+
+HR_2 <- HR_2 %>% mutate(Food=as.factor(Food))
+glm_HR_Bin.FJr <- glm(HR~nom*Food, data=HR_2, family=quasibinomial(link="logit"))
+summary(glm_HR_Bin.FJr)
+plot(residuals(glm_HR_Bin.FJr))
+
+emm_HR_binFJR <- emmeans(glm_HR_Bin.FJr, revpairwise~nom|Food, infer=TRUE, type="response")
+emm_HR_binFJR
+
+```
+
+## Mating
+
+## Pannel plot
+
+```{r}
+library(patchwork)
+
+pannel_fig <- (HR+plot_PR)/(BFR_plot+ELR_plot)/ENb_plot
+pannel_fig <- HR+plot_PR+BFR_plot+ELR_plot+ENb_plot
+
+pannel_fig+plot_layout(nrow = 3, byrow = FALSE)+
+  plot_annotation(tag_levels = 'A')
+
+ggsave("./img/pannel_4plot.jpeg", width = 20, height = 15, units = "cm")
+
+```
