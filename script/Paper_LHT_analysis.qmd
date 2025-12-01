@@ -1,7 +1,7 @@
 ---
 title: "Data analysis for paper : Effect of permethrin contamination during larval development on Anopheles gambiae's life history traits"
 author: "Angelique Porciani"
-date: Sys.Date()
+date: today
 format:
   html:
     code-fold: true
@@ -23,15 +23,16 @@ execute:
 # package loading 
 library(readxl)
 library(tidyverse)
-library(gtsummary)
 library(Rmisc)
 library(emmeans)
 library(kableExtra)
 library(DHARMa)
 library(glmmTMB)
 library(patchwork)
+library(scales)
+library(broom.mixed)
+library(dplyr)
 library(gtsummary)
-
 
 # data import 
 CP_data <- read_excel("../Data/20230503_tous_replicats_choix_pondoir.xlsx") %>% mutate_if(is.character, as.factor) %>% dplyr::rename(concentration_origine=`concentration_permethrine_mg/ml`) 
@@ -40,14 +41,18 @@ CP_data <- CP_data %>%
 
 BFR_data <- read_excel("../Data/20230503_tous_replicats_taux_gorgement.xlsx")
 
-HatchingR <- read_excel("../Data/20230503_tous_replicats_oeuf_eclosion rate.xlsx")
+HatchingR <- read_excel("../Data/20230503_tous_replicats_oeuf_eclosion rate.xlsx") 
 HR_2 <- read.csv2("../Data/hatching_02rep.csv")
 
-LHT_data <- read_excel("./Data/20230503_tous_replicats_larves_nymphes_adultes_LHT.xlsx") %>% mutate(jour=as.numeric(as.character(jour))) %>% mutate_if(is.character, as.factor) %>% dplyr::rename(concentration_origine=`concentration_permethrine_mg/ml` , survie=passage_ny1phe ) %>% droplevels() %>% 
+
+
+LHT_data <- read_excel("../Data/20230503_tous_replicats_larves_nymphes_adultes_LHT.xlsx") %>% mutate(jour=as.numeric(as.character(jour))) %>% mutate_if(is.character, as.factor) %>% dplyr::rename(concentration_origine=`concentration_permethrine_mg/ml` , survie=passage_ny1phe ) %>% droplevels() %>% 
   filter(nom!="eau_KIS") 
+
 LHT_data$nom <- factor(LHT_data$nom,
-                         levels = c("eau_KDR","orange_KDR", "rose_KDR","rouge_KDR" ),
-                         labels = c("0", "2.10-4", "2.10-3", "2.10-2"))
+                         levels = c("eau_KDR", "rose_KDR","orange_KDR","rouge_KDR" ),
+                         labels = c("0", "2 × 10⁻⁴", "2 × 10⁻³", "2 × 10⁻²"))
+
 ```
 
 ## Hatching rate 
@@ -73,13 +78,13 @@ HR_2_b <- HR_2 %>% filter(jour==1 & Food==0) %>% select(souche, nom, produit, jo
 HR_mod_tot <- rbind(HR_1_b, HR_2_b)
 
 # Effectif 
-
+HR_mod_tot$nom <- factor(HR_mod_tot$nom, levels = c("KDR_eau", "KDR_rose", "KDR_orange", "KDR_rouge"),
+                         labels = c("0", "2 × 10⁻⁴", "2 × 10⁻³", "2 × 10⁻²"))
 HR_mod_tot %>% dplyr::group_by(nom, replicate) %>% 
   dplyr::summarise(Effectif=n()) %>% 
   kbl(caption = "Number of wells per replicates", booktabs = T)%>%
 	kable_styling(full_width = F)
 
-HR_mod_tot$nom <- factor(HR_mod_tot$nom, levels = c("KDR_eau", "KDR_rose", "KDR_orange", "KDR_rouge"))
 
 ```
 
@@ -104,7 +109,6 @@ emm_HR_binFJR$contrasts %>% kbl(caption = "Hatching rate comparisons", booktabs 
 
 # marginal means for plot 
 emm_plot_HR <- emm_HR_binFJR$emmeans %>% data.frame() 
-emm_plot_HR$nom <- factor(emm_plot_HR$nom, levels = c("KDR_eau", "KDR_rose", "KDR_orange", "KDR_rouge"))
 
 
 ```
@@ -126,11 +130,19 @@ geom_col(data=emm_plot_HR,aes(x=nom, y=prob, colour=nom, fill=nom, alpha = 0.8))
     scale_fill_manual(
       values = c("#648FFF","#FF6699", "#FE6100","#CC0000"))+
       theme(legend.position = "none", axis.title.x=element_blank())+  
-  scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "0.0002", "KDR_orange" = "0.002","KDR_rouge" = "0.02" ))
+  # scale_x_discrete(labels = c("KDR_eau" = "0", "KDR_rose" = "2.10-4", "KDR_orange" = "2.10-3","KDR_rouge" = "2.10-2" ))
+scale_x_discrete(
+ labels = c(
+      "0",
+      expression(2 %*% 10^-4),
+      expression(2 %*% 10^-3),
+      expression(2 %*% 10^-2)
+    )
+  )
 
 HR
 
-ggsave("../img/HR_pic_col.jpeg", width = 20, height = 15, units = "cm")
+#ggsave("./img/HR_pic_col.jpeg", width = 20, height = 15, units = "cm")
 ```
 
 ## Mortality rate  
@@ -162,8 +174,25 @@ plot(sim)
 # results 
 emm_NR_kdr <- emmeans(glm_NR_kdr, pairwise~nom, infer=TRUE, type="response")
 
-emm_NR_kdr$contrasts %>% kbl(caption = "Survival comparisons", booktabs = T)%>%
-	kable_styling(full_width = F)
+as.data.frame(emm_NR_kdr$contrasts) %>%
+  mutate(
+    contrast = as.character(contrast),
+    odds.ratio = format(round(odds.ratio, 2), scientific = FALSE),
+    SE = format(round(SE, 2), scientific = FALSE),
+    df = round(df, 1),
+    asymp.LCL= round(asymp.LCL, 3),
+    asymp.UCL =round(asymp.UCL,3),
+    z.ratio = round(z.ratio, 3),
+   p.value = format.pval(p.value, digits = 3, eps = 0.001)
+  ) %>%   
+  kbl(
+    caption = "Comparaisons par paires (emmeans)",
+    #col.names = c("Comparaison", "OR", "SE", "df", "Z-ratio", "p-value"),
+    align = "c",
+    digits=3
+  ) %>%
+  kable_classic(full_width = FALSE)
+
 
 
 ```
@@ -175,7 +204,7 @@ plot_emm_PR <- emm_NR_kdr$emmeans %>% data.frame()
 plot_emm_PR[4,6] <- 0 # changement des valeurs pour le rouge ou tout est mort
 plot_emm_PR[4,5] <- 0 # changement des valeurs pour le rouge ou tout est mort
 
-plot_emm_PR$nom <- factor(plot_emm_PR$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR", "rouge_KDR"))
+
 plot_emm_PR$letter <- c("a","b","c","d")
 
 plot_PR <- plot_emm_PR %>% ggplot()+
@@ -191,14 +220,19 @@ plot_PR <- plot_emm_PR %>% ggplot()+
       values = c("#648FFF","#FF6699", "#FE6100", "#CC0000"))+
     scale_fill_manual(
       values = c("#648FFF","#FF6699", "#FE6100", "#CC0000"))+
-  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "2.10-4", "orange_KDR" = "2.10-3", "rouge_KDR"="2.10-2"))+
+  scale_x_discrete( labels = c(
+      "0",
+      expression(2 %*% 10^-4),
+      expression(2 %*% 10^-3),
+      expression(2 %*% 10^-2)
+  ))+
   geom_text(data=plot_emm_PR,aes(label = letter, x=nom, y = asymp.UCL), 
             position = position_dodge(width = 1),
     vjust = -0.5, size = 4)
 
 plot_PR
 
-ggsave("../img/PR_pic.jpeg", width = 30, height = 20, units = "cm")
+#ggsave("./img/PR_pic.jpeg", width = 30, height = 20, units = "cm")
 ```
 
 ## Time of pupation 
@@ -217,10 +251,14 @@ LHT_mod %>%dplyr::group_by(nom) %>%
 ```{r}
 BFR_data <- BFR_data %>% mutate_if(is.character, as.factor) 
 
+BFR_data$nom <- factor(BFR_data$nom,
+                         levels = c("eau_KDR","rose_KDR","orange_KDR" ),
+                         labels = c("0", "2 × 10⁻⁴", "2 × 10⁻³"))
+
 BFR_data %>% 
   tbl_summary(include = c("nom", "gorgee_1"), by = "nom") 
 
-summary(BFR_data)
+#summary(BFR_data)
 
 BFR_data_mod <- BFR_data %>% filter(souche=="KDR") %>% droplevels()
 summary(BFR_data_mod)
@@ -237,9 +275,9 @@ n_tot <- BFR_data_mod %>%
 
 BFR_data_plot <- inner_join(n_gorgee,n_tot) %>% 
   mutate(prop_gorgee=n_gorgee/n_tot)
-summary(BFR_data_plot)
+#summary(BFR_data_plot)
 
-BFR_data_plot$nom <- factor(BFR_data_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
+#BFR_data_plot$nom <- factor(BFR_data_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
 
 ```
 
@@ -247,9 +285,9 @@ BFR_data_plot$nom <- factor(BFR_data_plot$nom, levels = c("eau_KDR", "rose_KDR",
 
 ```{r}
 glm_BFR <- glmmTMB(gorgee_1~nom+(1|replicat), data=BFR_data_mod, family=binomial(link="logit"))
-summary(glm_BFR)
+#summary(glm_BFR)
 
-emm_BFR <- emmeans(glm_BFR, pairwise~nom, infer=TRUE, type="response")
+emm_BFR <- emmeans(glm_BFR, revpairwise~nom, infer=TRUE, type="response")
 emm_BFR
 emm_BFR_plot <- emm_BFR$emmeans %>% data.frame()
 
@@ -264,7 +302,7 @@ plot(res)# ok
 ```{r}
 # plot emmean
 
-emm_BFR_plot$nom <- factor(emm_BFR_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
+#emm_BFR_plot$nom <- factor(emm_BFR_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
 emm_BFR_plot$letter <- c("a","b","b")
 
 
@@ -282,22 +320,28 @@ geom_col(data=emm_BFR_plot,aes(x=nom, y=prob, colour=nom, fill=nom, alpha = 0.8)
     scale_fill_manual(
       values = c("#648FFF","#FF6699", "#FE6100"))+
       theme(legend.position = "none", axis.title.x=element_blank())+  
-  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "0.0002", "orange_KDR" = "0.002"))+
+  scale_x_discrete(
+ labels = c(
+      "0",
+      expression(2 %*% 10^-4),
+      expression(2 %*% 10^-3)))+  
   geom_text(data=emm_BFR_plot,aes(label = letter, x=nom, y = asymp.UCL), 
             position = position_dodge(width = 1),
     vjust = -0.5, size = 4)
 
 BFR_plot
 
-ggsave("../img/BFR_pic_col.jpeg", width = 20, height = 15, units = "cm")
+#ggsave("./img/BFR_pic_col.jpeg", width = 20, height = 15, units = "cm")
 
 ```
 
-## Egg laying rate 
+## Ovipositing female rate 
 ### Data summary
 ```{r}
 mod_data <- CP_data %>% filter(souche=="kdr")
-
+mod_data$nom <- factor(mod_data$nom,
+                         levels = c("eau_KDR","rose_KDR", "orange_KDR"),
+                         labels = c("0", "2 × 10⁻⁴", "2 × 10⁻³"))
 mod_data %>% 
   tbl_summary(include = c("nom", "ponte_1"), by = "nom",     statistic = all_continuous() ~ "Moy. : {mean}; Median: {median}; SD: {sd}")
 ```
@@ -322,7 +366,6 @@ emm_ovipositionR
 ```{r}
 # plot 
 emm_OR_plot <- emm_ovipositionR$emmeans %>% data.frame()
-emm_OR_plot$nom <- factor(emm_OR_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
 
 ELR_plot <- emm_OR_plot%>%  ggplot()+
     #geom_jitter(data=HR_mod_tot,aes(x=nom, y=HR, colour=nom))+
@@ -331,18 +374,22 @@ ELR_plot <- emm_OR_plot%>%  ggplot()+
                  position=position_dodge(.9))+
           theme_classic()+
   ylim(c(0,1))+
-      ylab("Egg laying Rate ")+
+      ylab("Ovipositing female Rate ")+
   xlab("Permethrin concentration (mg/L)")+
         theme(legend.position = "none")+  
   scale_color_manual(
       values = c("#648FFF","#FF6699", "#FE6100"))+
     scale_fill_manual(
       values = c("#648FFF","#FF6699", "#FE6100"))+
-  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "0.0002", "orange_KDR" = "0.002" )) 
-
+  scale_x_discrete(
+ labels = scales::parse_format()(c(
+    "0",
+    "2 %*% 10^-4",
+    "2 %*% 10^-3"
+  )))
 ELR_plot
 
-ggsave("../img/ELR_pic.jpeg", width = 30, height = 20, units = "cm")
+#ggsave("./img/ELR_pic.jpeg", width = 30, height = 20, units = "cm")
 
 ```
 
@@ -361,8 +408,6 @@ plot(res)#Ok
 ### Plot 
 ```{r}
 emm_nbrofnR_plot <- emm_nbrofnR$emmeans %>% data.frame()
-emm_nbrofnR_plot$nom <- factor(emm_nbrofnR_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
-mod_data$nom <- factor(mod_data$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
 
 ENb_plot <- emm_nbrofnR_plot %>%  ggplot()+
     #geom_jitter(data=mod_data,aes(x=nom, y=nbr_oeufs, colour=nom))+
@@ -378,10 +423,15 @@ ENb_plot <- emm_nbrofnR_plot %>%  ggplot()+
       values = c("#648FFF","#FF6699", "#FE6100"))+
     scale_fill_manual(
       values = c("#648FFF","#FF6699", "#FE6100"))+
-  scale_x_discrete(labels = c("eau_KDR" = "0", "rose_KDR" = "0.0002", "orange_KDR" = "0.002" )) 
-
+  scale_x_discrete(
+ labels = scales::parse_format()(c(
+    "0",
+    "2 %*% 10^-4",
+    "2 %*% 10^-3",
+    "2 %*% 10^-2"
+  )))
 ENb_plot
-ggsave("../img/Nb_egg_pic.jpeg", width = 30, height = 20, units = "cm")
+#ggsave("./img/Nb_egg_pic.jpeg", width = 30, height = 20, units = "cm")
 
 
 ```
@@ -390,15 +440,22 @@ ggsave("../img/Nb_egg_pic.jpeg", width = 30, height = 20, units = "cm")
 ## Figure edition (panel plot)
 
 ```{r}
+BFR_plot2 <- BFR_plot + theme(plot.margin = margin(10, 20, 10, 20)) + coord_cartesian(clip = "off")
+HR_plot    <- HR + coord_cartesian(clip = "off")
+plot_PR    <- plot_PR + coord_cartesian(clip = "off")
+ELR_plot   <- ELR_plot + coord_cartesian(clip = "off")
+ENb_plot   <- ENb_plot + coord_cartesian(clip = "off")
 
-pannel_fig <- HR+plot_PR+BFR_plot+ELR_plot+ENb_plot
+pannel_fig <- HR_plot + plot_PR + BFR_plot2 + ELR_plot + ENb_plot
 
-pannel_fig+plot_layout(ncol = 2, byrow = TRUE, heights = c(4,4,4))+
-  plot_annotation(tag_levels = 'A') + theme(plot.margin = margin(10, 10, 10, 10)) +
-  coord_cartesian(clip = "off")
+pannel_fig +
+  plot_layout(ncol = 2, byrow = TRUE, heights = c(5,5,5)) +
+  plot_annotation(tag_levels = 'A') +
+  theme(plot.margin = margin(12, 12, 12, 12))
+
 
 #ggsave("./img/pannel_4plot.jpeg", width = 30, height = 25, units = "cm")
-ggsave("../img/pannel_4plot.jpeg", width = 10, height = 8, units = "in", dpi = 300)
+#ggsave("./img/pannel_4plot.jpeg", width = 10, height = 9, units = "in", dpi = 300)
 
 ```
 
