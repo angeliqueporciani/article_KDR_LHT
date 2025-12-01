@@ -261,7 +261,7 @@ BFR_data %>%
 #summary(BFR_data)
 
 BFR_data_mod <- BFR_data %>% filter(souche=="KDR") %>% droplevels()
-summary(BFR_data_mod)
+#summary(BFR_data_mod)
 
 n_gorgee <- BFR_data_mod %>% 
   dplyr::group_by(nom, date_gorgement) %>% 
@@ -275,9 +275,7 @@ n_tot <- BFR_data_mod %>%
 
 BFR_data_plot <- inner_join(n_gorgee,n_tot) %>% 
   mutate(prop_gorgee=n_gorgee/n_tot)
-#summary(BFR_data_plot)
 
-#BFR_data_plot$nom <- factor(BFR_data_plot$nom, levels = c("eau_KDR", "rose_KDR", "orange_KDR"))
 
 ```
 
@@ -285,17 +283,19 @@ BFR_data_plot <- inner_join(n_gorgee,n_tot) %>%
 
 ```{r}
 glm_BFR <- glmmTMB(gorgee_1~nom+(1|replicat), data=BFR_data_mod, family=binomial(link="logit"))
-#summary(glm_BFR)
 
 emm_BFR <- emmeans(glm_BFR, revpairwise~nom, infer=TRUE, type="response")
-emm_BFR
+#emm_BFR
 emm_BFR_plot <- emm_BFR$emmeans %>% data.frame()
-
 
 # check residuals 
 
 res <- simulateResiduals(glm_BFR)
 plot(res)# ok
+
+# contrast 
+emm_BFR$contrasts %>% kbl(caption = "Blood feeding rate comparisons", booktabs = T, digits=4)%>%
+	kable_styling(full_width = F)
 ```
 
 ### Plot
@@ -350,15 +350,17 @@ mod_data %>%
 ```{r}
 glm_ponte2 <- glmmTMB(ponte_1~nom+(1|replicat), family= binomial, data= mod_data)
 
-summary(glm_ponte2)
+#summary(glm_ponte2)
 
 res <- simulateResiduals(glm_ponte2)
 plot(res)#Ok
 
 emm_ovipositionR <- emmeans(glm_ponte2, pairwise~nom, infer=TRUE, type="response")
-emm_ovipositionR
+#emm_ovipositionR
 
 
+emm_ovipositionR$contrast %>% kbl(caption = "Ovipositing female rate comparisons", booktabs = T, digits=4)%>%
+	kable_styling(full_width = F)
 
 ```
 
@@ -399,10 +401,12 @@ ELR_plot
 glm4 <- glmmTMB(nbr_oeufs~nom + (1|replicat), data=mod_data, family = nbinom1())
 
 emm_nbrofnR <- emmeans(glm4, pairwise~nom, infer=TRUE, type="response")
-emm_nbrofnR
 
 res <- simulateResiduals(glm4)
 plot(res)#Ok
+
+emm_nbrofnR$contrast %>% kbl(caption = "Number of eggs laid comparisons", booktabs = T, digits=4)%>%
+	kable_styling(full_width = F)
 ```
 
 ### Plot 
