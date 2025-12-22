@@ -55,8 +55,10 @@ LHT_data$nom <- factor(LHT_data$nom,
 
 ```
 
-## Hatching rate 
-### Data summary 
+## Hatching rate
+
+### Data summary
+
 ```{r}
 # binding of both replicate 
 # on ne garde les resultats que pour KDR et pour le jour 1. 
@@ -88,7 +90,6 @@ HR_mod_tot %>% dplyr::group_by(nom, replicate) %>%
 
 ```
 
-
 ### Model
 
 ```{r}
@@ -113,7 +114,7 @@ emm_plot_HR <- emm_HR_binFJR$emmeans %>% data.frame()
 
 ```
 
-### Plot  
+### Plot
 
 ```{r}
 HR <- ggplot()+
@@ -145,9 +146,10 @@ HR
 #ggsave("./img/HR_pic_col.jpeg", width = 20, height = 15, units = "cm")
 ```
 
-## Mortality rate  
+## Mortality rate
 
 ### Data summary
+
 ```{r}
 LHT_data %>% 
   tbl_summary(include = c("nom", "survie"), by = "nom")
@@ -197,7 +199,7 @@ as.data.frame(emm_NR_kdr$contrasts) %>%
 
 ```
 
-### Plot 
+### Plot
 
 ```{r}
 plot_emm_PR <- emm_NR_kdr$emmeans %>% data.frame()
@@ -235,7 +237,7 @@ plot_PR
 #ggsave("./img/PR_pic.jpeg", width = 30, height = 20, units = "cm")
 ```
 
-## Time of pupation 
+## Time of pupation
 
 ```{r}
 LHT_mod %>%dplyr::group_by(nom) %>% 
@@ -244,9 +246,14 @@ LHT_mod %>%dplyr::group_by(nom) %>%
 	kable_styling(full_width = F)
 ```
 
-## Blood feeding rate 
+Comparaison du jour de pupation à faire 
+```{r}
 
-### Data summary 
+```
+
+## Blood feeding rate
+
+### Data summary
 
 ```{r}
 BFR_data <- BFR_data %>% mutate_if(is.character, as.factor) 
@@ -279,7 +286,7 @@ BFR_data_plot <- inner_join(n_gorgee,n_tot) %>%
 
 ```
 
-### Model 
+### Model
 
 ```{r}
 glm_BFR <- glmmTMB(gorgee_1~nom+(1|replicat), data=BFR_data_mod, family=binomial(link="logit"))
@@ -299,6 +306,7 @@ emm_BFR$contrasts %>% kbl(caption = "Blood feeding rate comparisons", booktabs =
 ```
 
 ### Plot
+
 ```{r}
 # plot emmean
 
@@ -335,8 +343,10 @@ BFR_plot
 
 ```
 
-## Ovipositing female rate 
+## Ovipositing female rate
+
 ### Data summary
+
 ```{r}
 mod_data <- CP_data %>% filter(souche=="kdr")
 mod_data$nom <- factor(mod_data$nom,
@@ -347,6 +357,7 @@ mod_data %>%
 ```
 
 ### Model
+
 ```{r}
 glm_ponte2 <- glmmTMB(ponte_1~nom+(1|replicat), family= binomial, data= mod_data)
 
@@ -364,7 +375,8 @@ emm_ovipositionR$contrast %>% kbl(caption = "Ovipositing female rate comparisons
 
 ```
 
-### Plot 
+### Plot
+
 ```{r}
 # plot 
 emm_OR_plot <- emm_ovipositionR$emmeans %>% data.frame()
@@ -395,8 +407,10 @@ ELR_plot
 
 ```
 
-## Number of eggs 
-### Model 
+## Number of eggs
+
+### Model
+
 ```{r}
 glm4 <- glmmTMB(nbr_oeufs~nom + (1|replicat), data=mod_data, family = nbinom1())
 
@@ -409,7 +423,8 @@ emm_nbrofnR$contrast %>% kbl(caption = "Number of eggs laid comparisons", bookta
 	kable_styling(full_width = F)
 ```
 
-### Plot 
+### Plot
+
 ```{r}
 emm_nbrofnR_plot <- emm_nbrofnR$emmeans %>% data.frame()
 
@@ -440,7 +455,6 @@ ENb_plot
 
 ```
 
-
 ## Figure edition (panel plot)
 
 ```{r}
@@ -462,6 +476,3 @@ pannel_fig +
 #ggsave("./img/pannel_4plot.jpeg", width = 10, height = 9, units = "in", dpi = 300)
 
 ```
-
-
-
