@@ -9,7 +9,7 @@ This project contains data, analysis and figures of experiment done to investiga
 ## Repository Contents
 
 ```text
-├── Analyse.R                   # R project  
+├── Analyse.Rproj               # R project  
 ├── Data/                       # Raw data
 │   ├── Data_dictionnary.md     # Description of variable of each files present in Data folder.  
 ├── img/                        # Figures generated for publication
