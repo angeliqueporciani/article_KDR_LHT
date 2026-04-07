@@ -1,11 +1,13 @@
-Effect of permethrin contamination during larval development on Anopheles gambiae's life history traits
+# Effect of permethrin contamination during larval development on Anopheles gambiae's life history traits
 
-## **Context and Objective**
+## Context and Objective
 
 This project contains data, analysis and figures of experiment done to investigate the effect of permethrin contamination during larval development on Anopheles gambiae's life history traits. 
-Paper redaction is ongoing. 
 
-## 📦 Repository Contents
+**Paper redaction and analysis are ongoing.**
+
+## Repository Contents
+
 ```text
 ├── Analyse.R                   # R project  
 ├── Data/                       # Raw data
